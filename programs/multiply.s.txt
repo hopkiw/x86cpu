@@ -1,0 +1,34 @@
+multiply:
+  push   bp
+  mov    bp,sp
+  sub    sp,0xc
+  mov    ax,[bp+0x4] 
+  mov    [bp-0x4],ax
+  mov    ax,[bp+0x6] 
+  mov    [bp-0x6],ax
+  mov    ax,[bp+0x4]
+  mov    [bp-0xc],0x0
+  mov    [bp-0x10],0x0
+  mov    ax,[bp-0xc]
+increment:
+  cmp    [bp-0x4],ax
+  je     done
+  mov    ax,[bp-0xc]
+  add    ax,[bp-0x4]
+  mov    [bp-0xc],ax
+  mov    ax,[bp-0x10]
+  add    ax,1
+  mov    [bp-0x10],ax
+  jmp    increment
+done:
+  mov    ax,[bp-0xc]
+  add    sp,0xc
+  pop    bp
+  ret
+_start:
+  push   13
+  push   4
+  call   multiply
+  push   ax
+  nop
+  nop

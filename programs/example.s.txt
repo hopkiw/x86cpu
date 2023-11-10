@@ -1,0 +1,24 @@
+myfunc:
+  mov    bx,0x13
+  ret
+_start:
+  mov    ax,0x12
+  add    ax,0x2
+  mov    cx,0x13
+  sub    cx,0x13
+  mov    bx,0x7f06
+  mov    [bx],0xdeadbeef
+  cmp    cx,0x13
+  call   myfunc  ; go to label
+  push   bx
+  mov    dx,0x15
+  pop    dx
+  mov    ax,0x00
+mylabel:
+  mov    bx,0x00
+  add    ax,0x01
+  cmp    ax,0x05
+  jne    mylabel
+  mov    [cx],ax
+  mov    ax,bx
+  mov    bx,ax
