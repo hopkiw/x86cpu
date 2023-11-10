@@ -2,8 +2,8 @@
 
 import unittest
 
-from cpu import CPU, STACK, State, DATA, Memory, Flag
-from cpu import Operand, RegisterOp, MemoryOp, ImmediateOp, OpType, Register
+from x86cpu.cpu import CPU, STACK, State, DATA, Memory, Flag
+from x86cpu.cpu import Operand, RegisterOp, MemoryOp, ImmediateOp, OpType, Register
 
 
 class CPUTest(unittest.TestCase):
