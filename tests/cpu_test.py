@@ -71,18 +71,44 @@ class CPUTest(unittest.TestCase):
     def test_get_operand_value(self):
         state = State(registers={'ax': 0x22},
                       memory=Memory({0x22: 0x34, 0x23: 0x12}))
-        cpu = CPU([], state=state)
 
-        self.assertEqual(0x22, cpu._get_operand_value(RegisterOp(Register.AX)))
+        class Test:
+            def __init__(self, operand, value):
+                self.operand = operand
+                self.value = value
 
-        self.assertEqual(0x1234, cpu._get_operand_value(MemoryOp(Register.AX)))
-        self.assertEqual(0x0012, cpu._get_operand_value(MemoryOp(Register.AX, 1)))
-        self.assertEqual(0x3400, cpu._get_operand_value(MemoryOp(Register.AX, -1)))
-
-        self.assertEqual(0x22, cpu._get_operand_value(ImmediateOp(0x22)))
+        for test in (
+                Test(RegisterOp(Register.AX), 0x22),
+                Test(MemoryOp(Register.AX), 0x1234),
+                Test(MemoryOp(Register.AX, offset=1), 0x0012),
+                Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                Test(ImmediateOp(0x22), 0x22),
+                ):
+            with self.subTest(test=test):
+                cpu = CPU([], state=state)
+                self.assertEqual(test.value,
+                                 cpu._get_operand_value(test.operand))
 
     def test_set_operand_value(self):
-        pass
+        state = State(registers={'ax': 0x22},
+                      memory=Memory({0x22: 0x34, 0x23: 0x12}))
+
+        class Test:
+            def __init__(self, operand, value):
+                self.operand = operand
+                self.value = value
+
+        for test in (
+                Test(RegisterOp(Register.AX), 0x22),
+                Test(MemoryOp(Register.AX), 0x1234),
+                Test(MemoryOp(Register.AX, offset=1), 0x0012),
+                Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                ):
+            with self.subTest(test=test):
+                cpu = CPU([], state=state)
+                cpu._set_operand_value(test.operand, test.value)
+                self.assertEqual(test.value,
+                                 cpu._get_operand_value(test.operand))
 
     def test_read_memory(self):
         pass

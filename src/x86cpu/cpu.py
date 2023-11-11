@@ -62,9 +62,17 @@ class OpType(Enum):
 
 class Register(Enum):
     AX = 'ax'
+    AL = 'al'
+    AH = 'ah'
     BX = 'bx'
+    BL = 'bl'
+    BH = 'bh'
     CX = 'cx'
+    CL = 'cl'
+    CH = 'ch'
     DX = 'dx'
+    DL = 'dl'
+    DH = 'dh'
     DI = 'di'
     SI = 'si'
     BP = 'bp'
@@ -194,6 +202,7 @@ class State:
 # idiv - ""
 # hlt
 # lea - after adding more addressing modes
+# update op.mul/div to support half-register addressing
 
 
 class CPU:
@@ -243,7 +252,18 @@ class CPU:
 
     def _get_operand_value(self, operand):
         if operand.optype == OpType.REGISTER:
-            return self.registers[operand.value.value]
+            register = operand.value.value
+            if register.endswith('l'):
+                # Low byte of register
+                register = Register(register.replace('l', 'x'))
+                return self.registers[register.value]
+            elif register.endswith('h'):
+                # High byte of register
+                register = Register(register.replace('h', 'x'))
+                return self.registers[register.value]
+            else:
+                # Word size in register
+                return self.registers[operand.value.value]
         elif operand.optype == OpType.MEMORY:
             addr = self.registers[operand.value.value] + operand.offset
             return self._read_memory(addr)
@@ -256,12 +276,20 @@ class CPU:
         if operand.optype == OpType.REGISTER:
             register = operand.value.value
             if register.endswith('l'):
-                pass
+                # Low byte of register
+                register = Register(register.replace('l', 'x'))
+                value = value & 0xff
+                cur = self.registers[register.value]
+                self.registers[register.value] = (cur & 0xff00) | value
             elif register.endswith('h'):
-                pass
+                # High byte of register
+                register = Register(register.replace('h', 'x'))
+                value = value & 0xff
+                cur = self.registers[register.value]
+                self.registers[register.value] = (cur & 0xff) | (value << 8)
             else:
-                pass
-            self.registers[operand.value.value] = value & 0xffff
+                # Word size in register
+                self.registers[operand.value.value] = value & 0xffff
         elif operand.optype == OpType.MEMORY:
             addr = self.registers[operand.value.value] + operand.offset
             self._write_memory(addr, value)

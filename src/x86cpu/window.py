@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from cpu import DATA, STACK, TEXT, Flag
+from x86cpu.cpu import DATA, STACK, TEXT, Flag
 
 import curses
 import curses.panel

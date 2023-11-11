@@ -1,5 +1,4 @@
 from setuptools import setup, find_packages
-import pathlib
 
 setup(
     # This is the name of your project. The first time you publish this
@@ -19,4 +18,10 @@ setup(
     package_dir={"": "src"},  # Optional
     packages=find_packages(where="src"),  # Required
     python_requires=">=3.7, <4",
+    entry_points={
+        'console_scripts': [
+            'x86cpu = x86cpu.emulator:main',
+            ],
+        },
+
 )
