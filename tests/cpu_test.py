@@ -2,8 +2,8 @@
 
 import unittest
 
-from x86cpu.cpu import CPU, STACK, State, DATA, Memory, Flag
-from x86cpu.cpu import Operand, RegisterOp, MemoryOp, ImmediateOp, OpType, Register
+from x86cpu.cpu import CPU, STACK, State, DATA, Memory, Flag, Register
+from x86cpu.cpu import Operand, RegisterOp, MemoryOp, ImmediateOp, OpType
 
 
 class CPUTest(unittest.TestCase):
@@ -69,7 +69,7 @@ class CPUTest(unittest.TestCase):
         self.assertSequenceEqual(rewrite, res)
 
     def test_get_operand_value(self):
-        state = State(registers={'ax': 0x22},
+        state = State(registers={'ax': 0x22, 'bx': 0xdead},
                       memory=Memory({0x22: 0x34, 0x23: 0x12}))
 
         class Test:
@@ -82,6 +82,8 @@ class CPUTest(unittest.TestCase):
                 Test(MemoryOp(Register.AX), 0x1234),
                 Test(MemoryOp(Register.AX, offset=1), 0x0012),
                 Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                Test(RegisterOp(Register.BL), 0xad),
+                Test(RegisterOp(Register.BH), 0xde),
                 Test(ImmediateOp(0x22), 0x22),
                 ):
             with self.subTest(test=test):
@@ -90,25 +92,34 @@ class CPUTest(unittest.TestCase):
                                  cpu._get_operand_value(test.operand))
 
     def test_set_operand_value(self):
-        state = State(registers={'ax': 0x22},
-                      memory=Memory({0x22: 0x34, 0x23: 0x12}))
+        state = State(registers={'bx': 0x1234})
 
         class Test:
-            def __init__(self, operand, value):
+            def __init__(self, operand, value, res_operand=None, res=None):
                 self.operand = operand
                 self.value = value
+                if res_operand is None:
+                    res_operand = operand
+                self.res_operand = res_operand
+                if res is None:
+                    res = value
+                self.res = res
 
         for test in (
                 Test(RegisterOp(Register.AX), 0x22),
                 Test(MemoryOp(Register.AX), 0x1234),
                 Test(MemoryOp(Register.AX, offset=1), 0x0012),
                 Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                Test(RegisterOp(Register.BL), 0x56,
+                     RegisterOp(Register.BX), 0x1256),
+                Test(RegisterOp(Register.BH), 0x56,
+                     RegisterOp(Register.BX), 0x5634),
                 ):
             with self.subTest(test=test):
                 cpu = CPU([], state=state)
                 cpu._set_operand_value(test.operand, test.value)
-                self.assertEqual(test.value,
-                                 cpu._get_operand_value(test.operand))
+                self.assertEqual(test.res,
+                                 cpu._get_operand_value(test.res_operand))
 
     def test_read_memory(self):
         pass
@@ -272,14 +283,11 @@ class CPUTest(unittest.TestCase):
 
     def test_flags(self):
         class Test:
-            def __init__(self, arg1, arg2, res, of, sf, zf, cf):
+            def __init__(self, arg1, arg2, res, flags):
                 self.arg1 = arg1
                 self.arg2 = arg2
                 self.res = res
-                self.of = of
-                self.sf = sf
-                self.zf = zf
-                self.cf = cf
+                self.flags = flags
 
             def __repr__(self):
                 res = {}
@@ -291,60 +299,39 @@ class CPUTest(unittest.TestCase):
                         res[i] = val
                 return str(res)
 
-            def checkflags(self, test, flags):
-                if self.of:
-                    test.assertIn(Flag.OF, flags)
-                else:
-                    test.assertNotIn(Flag.OF, flags)
-
-                if self.sf:
-                    test.assertIn(Flag.SF, flags)
-                else:
-                    test.assertNotIn(Flag.SF, flags)
-
-                if self.zf:
-                    test.assertIn(Flag.ZF, flags)
-                else:
-                    test.assertNotIn(Flag.ZF, flags)
-
-                if self.cf:
-                    test.assertIn(Flag.CF, flags)
-                else:
-                    test.assertNotIn(Flag.CF, flags)
-
         for test in (
-                #    arg1     arg2     result   OF      SF      ZF      CF
-                Test(0x7f00,  0,       0x7f00,  False,  False,  False,  False),
-                Test(0xffff,  0x7f,    0x7e,    False,  False,  False,  True),
-                Test(0,       0,       0,       False,  False,  True,   False),
-                Test(0xffff,  0x1,     0,       False,  False,  True,   True),
-                Test(0xffff,  0,       0xffff,  False,  True,   False,  False),
-                Test(0xffff,  0xffff,  0xfffe,  False,  True,   False,  True),
-                Test(0xffff,  0x8000,  0x7fff,  True,   False,  False,  True),
-                Test(0x8000,  0x8000,  0,       True,   False,  True,   True),
-                Test(0x7fff,  0x7fff,  0xfffe,  True,   True,   False,  False)
+                #    arg1     arg2     result   flags
+                Test(0x7f00,  0,       0x7f00,  Flag(0)),
+                Test(0xffff,  0x7f,    0x7e,    Flag.CF),
+                Test(0,       0,       0,       Flag.ZF),
+                Test(0xffff,  0x1,     0,       Flag.ZF | Flag.CF),
+                Test(0xffff,  0,       0xffff,  Flag.SF),
+                Test(0xffff,  0xffff,  0xfffe,  Flag.SF | Flag.CF),
+                Test(0xffff,  0x8000,  0x7fff,  Flag.OF | Flag.CF),
+                Test(0x8000,  0x8000,  0,       Flag.OF | Flag.ZF | Flag.CF),
+                Test(0x7fff,  0x7fff,  0xfffe,  Flag.OF | Flag.SF),
                 ):
             with self.subTest(test=test):
                 cpu = CPU([], state=State({'ax': test.arg1}))
                 cpu.op_add(RegisterOp(Register.AX), ImmediateOp(test.arg2))
                 self.assertEqual(test.res, cpu.registers[Register.AX.value])
-                test.checkflags(self, cpu.flags)
+                self.assertEqual(test.flags, cpu.flags)
 
         for test in (
-                #    arg1     arg2     result   OF      SF      ZF      CF
-                Test(0xffff,  0xfffe,  1,       False,  False,  False,  False),
-                Test(0x7ffe,  0xffff,  0x7fff,  False,  False,  False,  True),
-                Test(0xffff,  0xffff,  0,       False,  False,  True,   False),
-                Test(0xffff,  0x7fff,  0x8000,  False,  True,   False,  False),
-                Test(0xfffe,  0xffff,  0xffff,  False,  True,   False,  True),
-                Test(0xfffe,  0x7fff,  0x7fff,  True,   False,  False,  False),
-                Test(0x7fff,  0xffff,  0x8000,  True,   True,   False,  True),
+                #    arg1     arg2     result   flags
+                Test(0xffff,  0xfffe,  1,       Flag(0)),
+                Test(0x7ffe,  0xffff,  0x7fff,  Flag.CF),
+                Test(0xffff,  0xffff,  0,       Flag.ZF),
+                Test(0xffff,  0x7fff,  0x8000,  Flag.SF),
+                Test(0xfffe,  0xffff,  0xffff,  Flag.SF | Flag.CF),
+                Test(0xfffe,  0x7fff,  0x7fff,  Flag.OF),
+                Test(0x7fff,  0xffff,  0x8000,  Flag.OF | Flag.SF | Flag.CF),
                 ):
             with self.subTest(test=test):
                 cpu = CPU([], state=State({'ax': test.arg1}))
                 cpu.op_sub(RegisterOp(Register.AX), ImmediateOp(test.arg2))
                 self.assertEqual(test.res, cpu.registers[Register.AX.value])
-                test.checkflags(self, cpu.flags)
+                self.assertEqual(test.flags, cpu.flags)
 
     def test_op_cmp(self):
         state = State(registers={'ax': 0x2, 'bx': 0x1234, 'cx': 0x4},

@@ -256,11 +256,11 @@ class CPU:
             if register.endswith('l'):
                 # Low byte of register
                 register = Register(register.replace('l', 'x'))
-                return self.registers[register.value]
+                return self.registers[register.value] & 0xff
             elif register.endswith('h'):
                 # High byte of register
                 register = Register(register.replace('h', 'x'))
-                return self.registers[register.value]
+                return (self.registers[register.value] & 0xff00) >> 8
             else:
                 # Word size in register
                 return self.registers[operand.value.value]
