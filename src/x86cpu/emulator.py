@@ -78,6 +78,24 @@ def parse_data(data):
     return new_data
 
 
+def run(fn):
+    with open(fn, 'r') as fh:
+        lines = fh.read().splitlines()
+    sections, labels = parse_program(lines)
+    program = parse_text(sections['text'], labels)
+    data = parse_data(sections['data'])
+
+    cpu = CPU(program, labels['text']['_start'], data)
+
+    for i in range(1000):
+        try:
+            cpu.execute()
+        except IndexError:
+            pass
+
+    return cpu
+
+
 def _main(stdscr):
     global debug
 

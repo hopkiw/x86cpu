@@ -447,8 +447,8 @@ class CPU:
 
         multiplier = self._get_operand_value(operand)
         product = (multiplier * self.registers['ax']) & 0xffffffff
-        self.registers['dx'] = product >> 16     # high byte
-        self.registers['ax'] = product & 0xffff  # low byte
+        self.registers['dx'] = product >> 16     # high word
+        self.registers['ax'] = product & 0xffff  # low word
 
         if self.registers['dx'] == 0:
             self.flags &= ~Flag.CF
@@ -492,6 +492,40 @@ class CPU:
 
         opval = self._get_operand_value(src)
         self._set_operand_value(dest, opval)
+
+    def op_movb(self, dest, src):
+        pass
+
+    def op_shl(self, dest, count):
+        if count.optype == OpType.REGISTER and count.value != Register.CL:
+            raise Exception('invalid operand "%s"' % count)
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid operand "%s"' % dest)
+
+        curval = self._get_operand_value(dest)
+        countval = self._get_operand_value(count)
+        self._set_operand_value(dest, curval << countval)
+
+    def op_shlb(self, dest, count):
+        if count.optype == OpType.REGISTER and count.value != Register.CL:
+            raise Exception('invalid operand "%s"' % count)
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid operand "%s"' % dest)
+        if dest.optype == OpType.REGISTER and dest.value[1] not in ('l', 'h'):
+            raise Exception('invalid operand "%s"' % dest)
+
+        destval = self._get_operand_value(dest)
+        self._set_operand_value(dest, destval << count)
+
+    def op_shr(self, dest, count):
+        if count.optype == OpType.REGISTER and count.value != Register.CL:
+            raise Exception('invalid operand "%s"' % count)
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid operand "%s"' % dest)
+
+        curval = self._get_operand_value(dest)
+        countval = self._get_operand_value(count)
+        self._set_operand_value(dest, curval >> countval)
 
     def op_hlt(self):
         # TODO: handle this and simply display/stop taking input

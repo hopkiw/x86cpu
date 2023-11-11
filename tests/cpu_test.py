@@ -63,8 +63,6 @@ class CPUTest(unittest.TestCase):
                 ]
 
         cpu = CPU([])
-        self.maxDiff = None
-        # self.assertEqual(rewrite, cpu._rewrite_labels(program))
         res = cpu._rewrite_labels(program)
         self.assertSequenceEqual(rewrite, res)
 
@@ -481,6 +479,18 @@ class CPUTest(unittest.TestCase):
 
     def test_op_ret(self):
         pass
+
+    def test_op_shl(self):
+        state = State(registers={'ax': 0x1234})
+        cpu = CPU([], state=state)
+        cpu.op_shl(RegisterOp(Register.AX), ImmediateOp(0x3))
+        self.assertEqual(0x91a0, cpu.registers['ax'])
+
+    def test_op_shr(self):
+        state = State(registers={'ax': 0x1234})
+        cpu = CPU([], state=state)
+        cpu.op_shr(RegisterOp(Register.AX), ImmediateOp(0x3))
+        self.assertEqual(0x246, cpu.registers['ax'])
 
 
 class OperandTest(unittest.TestCase):
