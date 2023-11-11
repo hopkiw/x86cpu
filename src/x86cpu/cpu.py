@@ -181,14 +181,7 @@ class State:
 
 # Instructions to implement:
 #
-# shl   r/m16,imm8
-# shl   r/m16,cl
-# shr   r/m16,imm8
-# shr   r/m16,cl
 # test  r/m16,imm16
-# xor   r/m16,imm16
-# xor   r/m16,r16
-# not   r/m16
 # or    r/m16,imm16
 # or    r/m16,r16
 # and   r/m16,imm16
@@ -200,6 +193,9 @@ class State:
 #
 # imul - after adding signed values, sign extension, etc.
 # idiv - ""
+# mulb, divb, etc.
+# movsx, movzx
+#
 # hlt
 # lea - after adding more addressing modes
 # update op.mul/div to support half-register addressing
@@ -338,7 +334,7 @@ class CPU:
             self.op_jmp(operand)
 
     def op_cmp(self, dest, src):
-        if src.optype == OpType.MEMORY and dest.optype == OpType.MEMORY:
+        if src.optype == dest.optype == OpType.MEMORY:
             raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid dest operand')
@@ -358,7 +354,7 @@ class CPU:
         return val & ((2 ** bits) - 1)
 
     def op_sub(self, dest, src):
-        if src.optype == OpType.MEMORY and dest.optype == OpType.MEMORY:
+        if src.optype == dest.optype == OpType.MEMORY:
             raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid dest operand')
@@ -399,7 +395,7 @@ class CPU:
         self._set_operand_value(dest, res)
 
     def op_add(self, dest, src):
-        if src.optype == OpType.MEMORY and dest.optype == OpType.MEMORY:
+        if src.optype == dest.optype == OpType.MEMORY:
             raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid dest operand')
@@ -442,7 +438,7 @@ class CPU:
         self._set_operand_value(dest, res)
 
     def op_mul(self, operand):
-        if operand.optype not in (OpType.REGISTER, OpType.MEMORY):
+        if operand.optype == OpType.IMMEDIATE:
             raise Exception('invalid operand "%s"' % operand)
 
         multiplier = self._get_operand_value(operand)
@@ -458,7 +454,7 @@ class CPU:
             self.flags |= Flag.OF
 
     def op_div(self, operand):
-        if operand.optype not in (OpType.REGISTER, OpType.MEMORY):
+        if operand.optype == OpType.IMMEDIATE:
             raise Exception('invalid operand "%s"' % operand)
 
         divisor = self._get_operand_value(operand)
@@ -475,7 +471,7 @@ class CPU:
         self._set_operand_value(RegisterOp(Register.DX), remainder)
 
     def op_mov(self, dest, src, force=False):
-        if src.optype == OpType.MEMORY and dest.optype == OpType.MEMORY:
+        if src.optype == dest.optype == OpType.MEMORY:
             if not force:
                 raise Exception('invalid source,dest pair (%s)'
                                 % tuple([dest, src]))
@@ -483,8 +479,12 @@ class CPU:
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid dest operand')
 
+        for op in (src, dest):
+            if op.optype == OpType.REGISTER and op.value.value[1] in ('h', 'l'):
+                raise Exception('invalid operand size "%s"' % op)
+
         if dest.optype == OpType.MEMORY:
-            # i shouldn't keep typing this
+            # TODO: move to write_mem
             addr = self.registers[dest.value.value] + dest.offset
             if addr & 0xf000 != 0x7000:
                 raise Exception(
@@ -511,7 +511,7 @@ class CPU:
             raise Exception('invalid operand "%s"' % count)
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid operand "%s"' % dest)
-        if dest.optype == OpType.REGISTER and dest.value[1] not in ('l', 'h'):
+        if dest.optype == OpType.REGISTER and dest.value.value[1] not in ('l', 'h'):
             raise Exception('invalid operand "%s"' % dest)
 
         destval = self._get_operand_value(dest)
@@ -526,6 +526,68 @@ class CPU:
         curval = self._get_operand_value(dest)
         countval = self._get_operand_value(count)
         self._set_operand_value(dest, curval >> countval)
+
+    def op_xor(self, dest, src):
+        if src.optype == dest.optype == OpType.MEMORY:
+            raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid dest operand')
+        if dest.optype == OpType.REGISTER and dest.value.value[1] in ('l', 'h'):
+            raise Exception('invalid operand "%s"' % dest)
+        if src.optype == OpType.REGISTER and src.value.value[1] in ('l', 'h'):
+            raise Exception('invalid operand "%s"' % src)
+
+        srcval = self._get_operand_value(src)
+        destval = self._get_operand_value(dest)
+        res = destval ^ srcval
+
+        self.flags &= ~Flag.CF
+        self.flags &= ~Flag.OF
+
+        if res == 0:
+            self.flags |= Flag.ZF
+        else:
+            self.flags &= ~Flag.ZF
+
+        if res & 0x8000 == 0x8000:
+            self.flags |= Flag.SF
+        else:
+            self.flags &= ~Flag.SF
+
+        self._set_operand_value(dest, res)
+
+    def op_not(self, dest):
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid operand "%s"' % dest)
+
+        destval = self._get_operand_value(dest)
+        res = (0xffff - destval) & 0xffff
+        self._set_operand_value(dest, res)
+
+    def op_or(self, dest, src):
+        if src.optype == dest.optype == OpType.MEMORY:
+            raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid dest operand')
+
+        destval = self._get_operand_value(dest)
+        srcval = self._get_operand_value(src)
+        res = (destval | srcval) & 0xffff
+
+        self.flags &= ~Flag.CF
+        self.flags &= ~Flag.OF
+
+        if res == 0:
+            self.flags |= Flag.ZF
+        else:
+            self.flags &= ~Flag.ZF
+
+        if res & 0x8000 == 0x8000:
+            self.flags |= Flag.SF
+        else:
+            self.flags &= ~Flag.SF
+
+        self._set_operand_value(dest, res)
 
     def op_hlt(self):
         # TODO: handle this and simply display/stop taking input

@@ -487,10 +487,33 @@ class CPUTest(unittest.TestCase):
         self.assertEqual(0x91a0, cpu.registers['ax'])
 
     def test_op_shr(self):
-        state = State(registers={'ax': 0x1234})
+        state = State(registers={'ax': 0x1234, 'cx': 0x2})
         cpu = CPU([], state=state)
         cpu.op_shr(RegisterOp(Register.AX), ImmediateOp(0x3))
         self.assertEqual(0x246, cpu.registers['ax'])
+        cpu.op_shr(RegisterOp(Register.AX), RegisterOp(Register.CL))
+        self.assertEqual(0x91, cpu.registers['ax'])
+
+        with self.assertRaises(Exception):
+            cpu.op_shr(RegisterOp(Register.AX), RegisterOp(Register.BX))
+
+    def test_op_xor(self):
+        state = State(registers={'ax': 0xffff})
+        cpu = CPU([], state=state)
+        cpu.op_xor(RegisterOp(Register.AX), ImmediateOp(0xfff0))
+        self.assertEqual(0xf, cpu.registers['ax'])
+
+    def test_op_not(self):
+        state = State(registers={'ax': 0xff00})
+        cpu = CPU([], state=state)
+        cpu.op_not(RegisterOp(Register.AX))
+        self.assertEqual(0xff, cpu.registers['ax'])
+
+    def test_op_or(self):
+        state = State(registers={'ax': 0xff00})
+        cpu = CPU([], state=state)
+        cpu.op_or(RegisterOp(Register.AX), ImmediateOp(0xff))
+        self.assertEqual(0xffff, cpu.registers['ax'])
 
 
 class OperandTest(unittest.TestCase):
