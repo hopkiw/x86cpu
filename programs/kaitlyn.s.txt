@@ -1,0 +1,11 @@
+  mov   ax,0x7f04
+  mov   [ax],0xbeef
+  sub   ax,0x1
+  mov   bx,[ax]
+  mov   ax,bx
+  add   ax,0xbeef
+  push  ax
+  pop   cx
+  mov   ax,0
+  sub   ax,1
+  nop
