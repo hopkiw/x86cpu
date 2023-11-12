@@ -129,7 +129,6 @@ class CPUTest(unittest.TestCase):
         pass
 
     def test_op_mov(self):
-        # confirm raises, test supported combinations
         cpu = CPU([])
 
         cpu.op_mov(RegisterOp(Register.AX), ImmediateOp(STACK))
@@ -156,7 +155,6 @@ class CPUTest(unittest.TestCase):
         state = State(registers={'ax': 0x10, 'bx': 0x3, 'cx': 0x4},
                       memory=Memory({0x4: 0xef, 0x5: 0xbe}))
 
-        # For fun, go-style tests:
         class Test:
             def __init__(self, multiplier, ax, dx, cf, of):
                 self.multiplier = multiplier
@@ -189,11 +187,38 @@ class CPUTest(unittest.TestCase):
             cpu = CPU([])
             cpu.op_mul((0x1, 'i'))  # invalid optype
 
+    def test_op_imul(self):
+        #                             -27,535       -32,000        32,000
+        state = State(registers={'ax': 0x9471, 'bx': 0x8300, 'cx': 0x7d00})
+
+        class Test:
+            def __init__(self, multiplier, ax, dx):
+                self.multiplier = multiplier
+                self.ax = ax
+                self.dx = dx
+
+            def __repr__(self):
+                return str(self.__dict__)
+
+        for test in (
+                Test(RegisterOp(Register.BX), 0xd300, 0x3484),
+                Test(RegisterOp(Register.CX), 0x2d00, 0xcb7b),
+                ):
+
+            with self.subTest(test=test):
+                cpu = CPU([], state=state.copy())
+                cpu.op_imul(test.multiplier)
+                self.assertEqual(test.ax, cpu.registers['ax'])
+                self.assertEqual(test.dx, cpu.registers['dx'])
+
+        with self.assertRaises(Exception):
+            cpu = CPU([])
+            cpu.op_imul((0x1, 'i'))  # invalid optype
+
     def test_op_div(self):
         state = State(registers={'ax': 0x10, 'bx': 0x3, 'cx': 0x4, 'dx': 0x3},
                       memory=Memory({0x4: 0xef, 0x5: 0xbe}))
 
-        # For fun, go-style tests:
         class Test:
             def __init__(self, divisor, ax, dx, cf, of):
                 self.divisor = divisor
@@ -227,7 +252,49 @@ class CPUTest(unittest.TestCase):
 
         with self.assertRaises(Exception):
             cpu = CPU([])
-            cpu.op_mul((0x1, 'i'))  # invalid optype
+            cpu.op_div((0x1, 'i'))  # invalid optype
+
+    def test_op_idiv(self):
+        class Test:
+            def __init__(self, divisor, registers, ax, dx):
+                self.divisor = divisor
+                self.registers = registers
+                self.ax = ax
+                self.dx = dx
+
+            def __repr__(self):
+                return str(self.__dict__)
+
+        for test in (
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xfff3, 'dx': 0xffff, 'bx': 0x3},  # -13 / 3
+                     0xfffc, 0xffff),                          # -4, -1
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xfff1, 'dx': 0xffff, 'bx': 0x4},  # -15 / 4
+                     0xfffd, 0xfffd),                          # -3, -3
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xfff1, 'dx': 0xffff, 'bx': 0x3},  # -15 / 3
+                     0xfffb, 0),                               # -5, 0
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xf, 'dx': 0x0, 'bx': 0x3},        # 15 / 3
+                     0x5, 0),                                  # 5, 0
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xf, 'dx': 0x0, 'bx': 0xfffd},     # 15 / -3
+                     0xfffb, 0),                               # 5, 0
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xf, 'dx': 0x0, 'bx': 0xfffc},     # 15 / -4
+                     0xfffd, 0x3)                              # -3, 3
+                ):
+
+            with self.subTest(test=test):
+                cpu = CPU([], state=State(registers=test.registers))
+                cpu.op_idiv(test.divisor)
+                self.assertEqual(test.ax, cpu.registers['ax'])
+                self.assertEqual(test.dx, cpu.registers['dx'])
+
+        with self.assertRaises(Exception):
+            cpu = CPU([])
+            cpu.op_idiv((0x1, 'i'))  # invalid optype
 
     def test_op_add(self):
         state = State(registers={'ax': 0x2, 'bx': 0x3, 'cx': 0x4},
@@ -514,6 +581,12 @@ class CPUTest(unittest.TestCase):
         cpu = CPU([], state=state)
         cpu.op_or(RegisterOp(Register.AX), ImmediateOp(0xff))
         self.assertEqual(0xffff, cpu.registers['ax'])
+
+    def test_op_and(self):
+        state = State(registers={'ax': 0xff00})
+        cpu = CPU([], state=state)
+        cpu.op_and(RegisterOp(Register.AX), ImmediateOp(0xff))
+        self.assertEqual(0x0, cpu.registers['ax'])
 
 
 class OperandTest(unittest.TestCase):

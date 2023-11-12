@@ -179,26 +179,24 @@ class State:
         return State(self.registers, self.flags, self.memory)
 
 
-# Instructions to implement:
-#
-# test  r/m16,imm16
-# or    r/m16,imm16
-# or    r/m16,r16
-# and   r/m16,imm16
-# and   r16,r/m16
-# out   imm8,ax
-# out   dx,ax
-# in    ax,imm8
-# in    ax,dx
-#
-# imul - after adding signed values, sign extension, etc.
-# idiv - ""
-# mulb, divb, etc.
-# movsx, movzx
-#
-# hlt
-# lea - after adding more addressing modes
-# update op.mul/div to support half-register addressing
+def _twos_complement(val):
+    return val & 0xffff
+
+
+def __twos_complement(val):
+    bits = 16
+    if (val & (1 << (bits - 1))) != 0:
+        val = val - (1 << bits)
+
+    return val & ((1 << bits) - 1)
+
+
+def _twos_uncomplement(val):
+    bits = 16
+    if (val & (1 << (bits - 1))) != 0:
+        val = -1 * ((1 << bits) - val)
+
+    return val
 
 
 class CPU:
@@ -347,12 +345,6 @@ class CPU:
         else:
             self.flags &= ~Flag.ZF
 
-    def _twos_complement(self, val):
-        bits = 16
-        if (val & (1 << (bits - 1))) != 0:
-            val = val - (1 << bits)
-        return val & ((2 ** bits) - 1)
-
     def op_sub(self, dest, src):
         if src.optype == dest.optype == OpType.MEMORY:
             raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
@@ -364,7 +356,7 @@ class CPU:
         res = destval - srcval
 
         if res < 0:
-            res = self._twos_complement(res)
+            res = _twos_complement(res)
             self.flags |= Flag.CF
         else:
             self.flags &= ~Flag.CF
@@ -416,8 +408,6 @@ class CPU:
             self.flags &= ~Flag.ZF
 
         if res & 0x8000 == 0x8000:
-            import sys
-            print('res is', res, 'setting sf', file=sys.stderr)
             self.flags |= Flag.SF
         else:
             self.flags &= ~Flag.SF
@@ -453,6 +443,27 @@ class CPU:
             self.flags |= Flag.CF
             self.flags |= Flag.OF
 
+    def op_imul(self, operand):
+        # typically we would need sign extension prior to binary multiplication
+        # but we can just decode two's complement, multiply, convert back.
+        if operand.optype == OpType.IMMEDIATE:
+            raise Exception('invalid operand "%s"' % operand)
+
+        multiplier = self._get_operand_value(operand)
+        multiplier = _twos_uncomplement(multiplier)
+        multiplicand = _twos_uncomplement(self.registers['ax'])
+        # TODO product = _twos_complement(multiplier * multiplicand, 32)
+        product = multiplier * multiplicand
+        self.registers['dx'] = _twos_complement(product >> 16)     # high word
+        self.registers['ax'] = product & 0xffff                    # low word
+
+        if self.registers['dx'] == 0:
+            self.flags &= ~Flag.CF
+            self.flags &= ~Flag.OF
+        else:
+            self.flags |= Flag.CF
+            self.flags |= Flag.OF
+
     def op_div(self, operand):
         if operand.optype == OpType.IMMEDIATE:
             raise Exception('invalid operand "%s"' % operand)
@@ -470,6 +481,32 @@ class CPU:
         remainder = dividend % divisor
         self._set_operand_value(RegisterOp(Register.DX), remainder)
 
+    def op_idiv(self, operand):
+        if operand.optype == OpType.IMMEDIATE:
+            raise Exception('invalid operand "%s"' % operand)
+
+        divisor = self._get_operand_value(operand)
+        divisor = _twos_uncomplement(divisor)
+        dividend = _twos_uncomplement(self.registers['ax'])
+        dividend |= self.registers['dx'] << 16
+        # dividend = _twos_uncomplement(dividend)
+        # TODO: dividend = _twos_uncomplement(dividend, 32)
+
+        quotient = int(dividend / divisor)
+        if quotient > 0xFFFFFFFF:
+            raise Exception("divide error")
+
+        self._set_operand_value(RegisterOp(Register.AX),
+                                _twos_complement(quotient))
+
+        if dividend < 0 or divisor < 0:
+            remainder = (-1 * dividend) % divisor
+            remainder = -1 * remainder
+        else:
+            remainder = dividend % divisor
+        self._set_operand_value(RegisterOp(Register.DX),
+                                _twos_complement(remainder))
+
     def op_mov(self, dest, src, force=False):
         if src.optype == dest.optype == OpType.MEMORY:
             if not force:
@@ -480,8 +517,9 @@ class CPU:
             raise Exception('invalid dest operand')
 
         for op in (src, dest):
-            if op.optype == OpType.REGISTER and op.value.value[1] in ('h', 'l'):
-                raise Exception('invalid operand size "%s"' % op)
+            if op.optype == OpType.REGISTER:
+                if op.value.value[1] in ('h', 'l'):
+                    raise Exception('invalid operand size "%s"' % op)
 
         if dest.optype == OpType.MEMORY:
             # TODO: move to write_mem
@@ -494,7 +532,27 @@ class CPU:
         self._set_operand_value(dest, opval)
 
     def op_movb(self, dest, src):
-        pass
+        if src.optype == dest.optype == OpType.MEMORY:
+            raise Exception('invalid source,dest pair (%s)'
+                            % tuple([dest, src]))
+
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid dest operand')
+
+        for op in (src, dest):
+            if op.optype == OpType.REGISTER:
+                if op.value.value[1] in ('h', 'l'):
+                    raise Exception('invalid operand size "%s"' % op)
+
+        if dest.optype == OpType.MEMORY:
+            # TODO: move to write_mem
+            addr = self.registers[dest.value.value] + dest.offset
+            if addr & 0xf000 != 0x7000:
+                raise Exception(
+                        f'runtime error: invalid memory address {addr:#06x}')
+
+        opval = self._get_operand_value(src)
+        self._set_operand_value(dest, opval)
 
     def op_shl(self, dest, count):
         if count.optype == OpType.REGISTER and count.value != Register.CL:
@@ -511,8 +569,9 @@ class CPU:
             raise Exception('invalid operand "%s"' % count)
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid operand "%s"' % dest)
-        if dest.optype == OpType.REGISTER and dest.value.value[1] not in ('l', 'h'):
-            raise Exception('invalid operand "%s"' % dest)
+        if dest.optype == OpType.REGISTER:
+            if dest.value.value[1] not in ('l', 'h'):
+                raise Exception('invalid operand "%s"' % dest)
 
         destval = self._get_operand_value(dest)
         self._set_operand_value(dest, destval << count)
@@ -532,10 +591,12 @@ class CPU:
             raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid dest operand')
-        if dest.optype == OpType.REGISTER and dest.value.value[1] in ('l', 'h'):
-            raise Exception('invalid operand "%s"' % dest)
-        if src.optype == OpType.REGISTER and src.value.value[1] in ('l', 'h'):
-            raise Exception('invalid operand "%s"' % src)
+        if dest.optype == OpType.REGISTER:
+            if dest.value.value[1] in ('l', 'h'):
+                raise Exception('invalid operand "%s"' % dest)
+        if src.optype == OpType.REGISTER:
+            if src.value.value[1] in ('l', 'h'):
+                raise Exception('invalid operand "%s"' % src)
 
         srcval = self._get_operand_value(src)
         destval = self._get_operand_value(dest)
@@ -573,6 +634,31 @@ class CPU:
         destval = self._get_operand_value(dest)
         srcval = self._get_operand_value(src)
         res = (destval | srcval) & 0xffff
+
+        self.flags &= ~Flag.CF
+        self.flags &= ~Flag.OF
+
+        if res == 0:
+            self.flags |= Flag.ZF
+        else:
+            self.flags &= ~Flag.ZF
+
+        if res & 0x8000 == 0x8000:
+            self.flags |= Flag.SF
+        else:
+            self.flags &= ~Flag.SF
+
+        self._set_operand_value(dest, res)
+
+    def op_and(self, dest, src):
+        if src.optype == dest.optype == OpType.MEMORY:
+            raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid dest operand')
+
+        destval = self._get_operand_value(dest)
+        srcval = self._get_operand_value(src)
+        res = (destval & srcval) & 0xffff
 
         self.flags &= ~Flag.CF
         self.flags &= ~Flag.OF
