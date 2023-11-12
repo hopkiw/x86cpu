@@ -2,8 +2,8 @@
 
 import unittest
 
-from x86cpu.cpu import CPU, STACK, State, DATA, Memory, Flag
-from x86cpu.cpu import Operand, RegisterOp, MemoryOp, ImmediateOp, OpType, Register
+from x86cpu.cpu import CPU, STACK, State, DATA, Memory, Flag, Register
+from x86cpu.cpu import Operand, RegisterOp, MemoryOp, ImmediateOp, OpType
 
 
 class CPUTest(unittest.TestCase):
@@ -63,26 +63,61 @@ class CPUTest(unittest.TestCase):
                 ]
 
         cpu = CPU([])
-        self.maxDiff = None
-        # self.assertEqual(rewrite, cpu._rewrite_labels(program))
         res = cpu._rewrite_labels(program)
         self.assertSequenceEqual(rewrite, res)
 
     def test_get_operand_value(self):
-        state = State(registers={'ax': 0x22},
+        state = State(registers={'ax': 0x22, 'bx': 0xdead},
                       memory=Memory({0x22: 0x34, 0x23: 0x12}))
-        cpu = CPU([], state=state)
 
-        self.assertEqual(0x22, cpu._get_operand_value(RegisterOp(Register.AX)))
+        class Test:
+            def __init__(self, operand, value):
+                self.operand = operand
+                self.value = value
 
-        self.assertEqual(0x1234, cpu._get_operand_value(MemoryOp(Register.AX)))
-        self.assertEqual(0x0012, cpu._get_operand_value(MemoryOp(Register.AX, 1)))
-        self.assertEqual(0x3400, cpu._get_operand_value(MemoryOp(Register.AX, -1)))
-
-        self.assertEqual(0x22, cpu._get_operand_value(ImmediateOp(0x22)))
+        for test in (
+                Test(RegisterOp(Register.AX), 0x22),
+                Test(MemoryOp(Register.AX), 0x1234),
+                Test(MemoryOp(Register.AX, offset=1), 0x0012),
+                Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                Test(RegisterOp(Register.BL), 0xad),
+                Test(RegisterOp(Register.BH), 0xde),
+                Test(ImmediateOp(0x22), 0x22),
+                ):
+            with self.subTest(test=test):
+                cpu = CPU([], state=state)
+                self.assertEqual(test.value,
+                                 cpu._get_operand_value(test.operand))
 
     def test_set_operand_value(self):
-        pass
+        state = State(registers={'bx': 0x1234})
+
+        class Test:
+            def __init__(self, operand, value, res_operand=None, res=None):
+                self.operand = operand
+                self.value = value
+                if res_operand is None:
+                    res_operand = operand
+                self.res_operand = res_operand
+                if res is None:
+                    res = value
+                self.res = res
+
+        for test in (
+                Test(RegisterOp(Register.AX), 0x22),
+                Test(MemoryOp(Register.AX), 0x1234),
+                Test(MemoryOp(Register.AX, offset=1), 0x0012),
+                Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                Test(RegisterOp(Register.BL), 0x56,
+                     RegisterOp(Register.BX), 0x1256),
+                Test(RegisterOp(Register.BH), 0x56,
+                     RegisterOp(Register.BX), 0x5634),
+                ):
+            with self.subTest(test=test):
+                cpu = CPU([], state=state)
+                cpu._set_operand_value(test.operand, test.value)
+                self.assertEqual(test.res,
+                                 cpu._get_operand_value(test.res_operand))
 
     def test_read_memory(self):
         pass
@@ -94,7 +129,6 @@ class CPUTest(unittest.TestCase):
         pass
 
     def test_op_mov(self):
-        # confirm raises, test supported combinations
         cpu = CPU([])
 
         cpu.op_mov(RegisterOp(Register.AX), ImmediateOp(STACK))
@@ -121,7 +155,6 @@ class CPUTest(unittest.TestCase):
         state = State(registers={'ax': 0x10, 'bx': 0x3, 'cx': 0x4},
                       memory=Memory({0x4: 0xef, 0x5: 0xbe}))
 
-        # For fun, go-style tests:
         class Test:
             def __init__(self, multiplier, ax, dx, cf, of):
                 self.multiplier = multiplier
@@ -154,11 +187,38 @@ class CPUTest(unittest.TestCase):
             cpu = CPU([])
             cpu.op_mul((0x1, 'i'))  # invalid optype
 
+    def test_op_imul(self):
+        #                             -27,535       -32,000        32,000
+        state = State(registers={'ax': 0x9471, 'bx': 0x8300, 'cx': 0x7d00})
+
+        class Test:
+            def __init__(self, multiplier, ax, dx):
+                self.multiplier = multiplier
+                self.ax = ax
+                self.dx = dx
+
+            def __repr__(self):
+                return str(self.__dict__)
+
+        for test in (
+                Test(RegisterOp(Register.BX), 0xd300, 0x3484),
+                Test(RegisterOp(Register.CX), 0x2d00, 0xcb7b),
+                ):
+
+            with self.subTest(test=test):
+                cpu = CPU([], state=state.copy())
+                cpu.op_imul(test.multiplier)
+                self.assertEqual(test.ax, cpu.registers['ax'])
+                self.assertEqual(test.dx, cpu.registers['dx'])
+
+        with self.assertRaises(Exception):
+            cpu = CPU([])
+            cpu.op_imul((0x1, 'i'))  # invalid optype
+
     def test_op_div(self):
         state = State(registers={'ax': 0x10, 'bx': 0x3, 'cx': 0x4, 'dx': 0x3},
                       memory=Memory({0x4: 0xef, 0x5: 0xbe}))
 
-        # For fun, go-style tests:
         class Test:
             def __init__(self, divisor, ax, dx, cf, of):
                 self.divisor = divisor
@@ -192,7 +252,49 @@ class CPUTest(unittest.TestCase):
 
         with self.assertRaises(Exception):
             cpu = CPU([])
-            cpu.op_mul((0x1, 'i'))  # invalid optype
+            cpu.op_div((0x1, 'i'))  # invalid optype
+
+    def test_op_idiv(self):
+        class Test:
+            def __init__(self, divisor, registers, ax, dx):
+                self.divisor = divisor
+                self.registers = registers
+                self.ax = ax
+                self.dx = dx
+
+            def __repr__(self):
+                return str(self.__dict__)
+
+        for test in (
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xfff3, 'dx': 0xffff, 'bx': 0x3},  # -13 / 3
+                     0xfffc, 0xffff),                          # -4, -1
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xfff1, 'dx': 0xffff, 'bx': 0x4},  # -15 / 4
+                     0xfffd, 0xfffd),                          # -3, -3
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xfff1, 'dx': 0xffff, 'bx': 0x3},  # -15 / 3
+                     0xfffb, 0),                               # -5, 0
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xf, 'dx': 0x0, 'bx': 0x3},        # 15 / 3
+                     0x5, 0),                                  # 5, 0
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xf, 'dx': 0x0, 'bx': 0xfffd},     # 15 / -3
+                     0xfffb, 0),                               # 5, 0
+                Test(RegisterOp(Register.BX),
+                     {'ax': 0xf, 'dx': 0x0, 'bx': 0xfffc},     # 15 / -4
+                     0xfffd, 0x3)                              # -3, 3
+                ):
+
+            with self.subTest(test=test):
+                cpu = CPU([], state=State(registers=test.registers))
+                cpu.op_idiv(test.divisor)
+                self.assertEqual(test.ax, cpu.registers['ax'])
+                self.assertEqual(test.dx, cpu.registers['dx'])
+
+        with self.assertRaises(Exception):
+            cpu = CPU([])
+            cpu.op_idiv((0x1, 'i'))  # invalid optype
 
     def test_op_add(self):
         state = State(registers={'ax': 0x2, 'bx': 0x3, 'cx': 0x4},
@@ -246,14 +348,11 @@ class CPUTest(unittest.TestCase):
 
     def test_flags(self):
         class Test:
-            def __init__(self, arg1, arg2, res, of, sf, zf, cf):
+            def __init__(self, arg1, arg2, res, flags):
                 self.arg1 = arg1
                 self.arg2 = arg2
                 self.res = res
-                self.of = of
-                self.sf = sf
-                self.zf = zf
-                self.cf = cf
+                self.flags = flags
 
             def __repr__(self):
                 res = {}
@@ -265,60 +364,39 @@ class CPUTest(unittest.TestCase):
                         res[i] = val
                 return str(res)
 
-            def checkflags(self, test, flags):
-                if self.of:
-                    test.assertIn(Flag.OF, flags)
-                else:
-                    test.assertNotIn(Flag.OF, flags)
-
-                if self.sf:
-                    test.assertIn(Flag.SF, flags)
-                else:
-                    test.assertNotIn(Flag.SF, flags)
-
-                if self.zf:
-                    test.assertIn(Flag.ZF, flags)
-                else:
-                    test.assertNotIn(Flag.ZF, flags)
-
-                if self.cf:
-                    test.assertIn(Flag.CF, flags)
-                else:
-                    test.assertNotIn(Flag.CF, flags)
-
         for test in (
-                #    arg1     arg2     result   OF      SF      ZF      CF
-                Test(0x7f00,  0,       0x7f00,  False,  False,  False,  False),
-                Test(0xffff,  0x7f,    0x7e,    False,  False,  False,  True),
-                Test(0,       0,       0,       False,  False,  True,   False),
-                Test(0xffff,  0x1,     0,       False,  False,  True,   True),
-                Test(0xffff,  0,       0xffff,  False,  True,   False,  False),
-                Test(0xffff,  0xffff,  0xfffe,  False,  True,   False,  True),
-                Test(0xffff,  0x8000,  0x7fff,  True,   False,  False,  True),
-                Test(0x8000,  0x8000,  0,       True,   False,  True,   True),
-                Test(0x7fff,  0x7fff,  0xfffe,  True,   True,   False,  False)
+                #    arg1     arg2     result   flags
+                Test(0x7f00,  0,       0x7f00,  Flag(0)),
+                Test(0xffff,  0x7f,    0x7e,    Flag.CF),
+                Test(0,       0,       0,       Flag.ZF),
+                Test(0xffff,  0x1,     0,       Flag.ZF | Flag.CF),
+                Test(0xffff,  0,       0xffff,  Flag.SF),
+                Test(0xffff,  0xffff,  0xfffe,  Flag.SF | Flag.CF),
+                Test(0xffff,  0x8000,  0x7fff,  Flag.OF | Flag.CF),
+                Test(0x8000,  0x8000,  0,       Flag.OF | Flag.ZF | Flag.CF),
+                Test(0x7fff,  0x7fff,  0xfffe,  Flag.OF | Flag.SF),
                 ):
             with self.subTest(test=test):
                 cpu = CPU([], state=State({'ax': test.arg1}))
                 cpu.op_add(RegisterOp(Register.AX), ImmediateOp(test.arg2))
                 self.assertEqual(test.res, cpu.registers[Register.AX.value])
-                test.checkflags(self, cpu.flags)
+                self.assertEqual(test.flags, cpu.flags)
 
         for test in (
-                #    arg1     arg2     result   OF      SF      ZF      CF
-                Test(0xffff,  0xfffe,  1,       False,  False,  False,  False),
-                Test(0x7ffe,  0xffff,  0x7fff,  False,  False,  False,  True),
-                Test(0xffff,  0xffff,  0,       False,  False,  True,   False),
-                Test(0xffff,  0x7fff,  0x8000,  False,  True,   False,  False),
-                Test(0xfffe,  0xffff,  0xffff,  False,  True,   False,  True),
-                Test(0xfffe,  0x7fff,  0x7fff,  True,   False,  False,  False),
-                Test(0x7fff,  0xffff,  0x8000,  True,   True,   False,  True),
+                #    arg1     arg2     result   flags
+                Test(0xffff,  0xfffe,  1,       Flag(0)),
+                Test(0x7ffe,  0xffff,  0x7fff,  Flag.CF),
+                Test(0xffff,  0xffff,  0,       Flag.ZF),
+                Test(0xffff,  0x7fff,  0x8000,  Flag.SF),
+                Test(0xfffe,  0xffff,  0xffff,  Flag.SF | Flag.CF),
+                Test(0xfffe,  0x7fff,  0x7fff,  Flag.OF),
+                Test(0x7fff,  0xffff,  0x8000,  Flag.OF | Flag.SF | Flag.CF),
                 ):
             with self.subTest(test=test):
                 cpu = CPU([], state=State({'ax': test.arg1}))
                 cpu.op_sub(RegisterOp(Register.AX), ImmediateOp(test.arg2))
                 self.assertEqual(test.res, cpu.registers[Register.AX.value])
-                test.checkflags(self, cpu.flags)
+                self.assertEqual(test.flags, cpu.flags)
 
     def test_op_cmp(self):
         state = State(registers={'ax': 0x2, 'bx': 0x1234, 'cx': 0x4},
@@ -468,6 +546,47 @@ class CPUTest(unittest.TestCase):
 
     def test_op_ret(self):
         pass
+
+    def test_op_shl(self):
+        state = State(registers={'ax': 0x1234})
+        cpu = CPU([], state=state)
+        cpu.op_shl(RegisterOp(Register.AX), ImmediateOp(0x3))
+        self.assertEqual(0x91a0, cpu.registers['ax'])
+
+    def test_op_shr(self):
+        state = State(registers={'ax': 0x1234, 'cx': 0x2})
+        cpu = CPU([], state=state)
+        cpu.op_shr(RegisterOp(Register.AX), ImmediateOp(0x3))
+        self.assertEqual(0x246, cpu.registers['ax'])
+        cpu.op_shr(RegisterOp(Register.AX), RegisterOp(Register.CL))
+        self.assertEqual(0x91, cpu.registers['ax'])
+
+        with self.assertRaises(Exception):
+            cpu.op_shr(RegisterOp(Register.AX), RegisterOp(Register.BX))
+
+    def test_op_xor(self):
+        state = State(registers={'ax': 0xffff})
+        cpu = CPU([], state=state)
+        cpu.op_xor(RegisterOp(Register.AX), ImmediateOp(0xfff0))
+        self.assertEqual(0xf, cpu.registers['ax'])
+
+    def test_op_not(self):
+        state = State(registers={'ax': 0xff00})
+        cpu = CPU([], state=state)
+        cpu.op_not(RegisterOp(Register.AX))
+        self.assertEqual(0xff, cpu.registers['ax'])
+
+    def test_op_or(self):
+        state = State(registers={'ax': 0xff00})
+        cpu = CPU([], state=state)
+        cpu.op_or(RegisterOp(Register.AX), ImmediateOp(0xff))
+        self.assertEqual(0xffff, cpu.registers['ax'])
+
+    def test_op_and(self):
+        state = State(registers={'ax': 0xff00})
+        cpu = CPU([], state=state)
+        cpu.op_and(RegisterOp(Register.AX), ImmediateOp(0xff))
+        self.assertEqual(0x0, cpu.registers['ax'])
 
 
 class OperandTest(unittest.TestCase):
