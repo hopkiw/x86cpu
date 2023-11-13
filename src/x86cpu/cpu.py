@@ -586,6 +586,20 @@ class CPU:
         countval = self._get_operand_value(count)
         self._set_operand_value(dest, curval >> countval)
 
+    def op_sar(self, dest, count):
+        if count.optype == OpType.REGISTER and count.value != Register.CL:
+            raise Exception('invalid operand "%s"' % count)
+        if dest.optype == OpType.IMMEDIATE:
+            raise Exception('invalid operand "%s"' % dest)
+
+        curval = self._get_operand_value(dest)
+        countval = self._get_operand_value(count)
+        res = curval >> countval
+        if (curval & 0x8000):
+            mask = ((1 << countval) - 1) << (16 - countval)
+            res = res | mask
+        self._set_operand_value(dest, res)
+
     def op_xor(self, dest, src):
         if src.optype == dest.optype == OpType.MEMORY:
             raise Exception('invalid source,dest pair (%s,%s)' % (dest, src))

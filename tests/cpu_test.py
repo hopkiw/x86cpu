@@ -564,6 +564,17 @@ class CPUTest(unittest.TestCase):
         with self.assertRaises(Exception):
             cpu.op_shr(RegisterOp(Register.AX), RegisterOp(Register.BX))
 
+    def test_op_sar(self):
+        state = State(registers={'ax': 0x80f0, 'cx': 0x2})
+        cpu = CPU([], state=state)
+        cpu.op_sar(RegisterOp(Register.AX), ImmediateOp(0x1))
+        self.assertEqual(0xc078, cpu.registers['ax'])
+        cpu.op_sar(RegisterOp(Register.AX), RegisterOp(Register.CL))
+        self.assertEqual(0xf01e, cpu.registers['ax'])
+
+        with self.assertRaises(Exception):
+            cpu.op_sar(RegisterOp(Register.AX), RegisterOp(Register.BX))
+
     def test_op_xor(self):
         state = State(registers={'ax': 0xffff})
         cpu = CPU([], state=state)
