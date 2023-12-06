@@ -633,6 +633,7 @@ class OperandTest(unittest.TestCase):
             Test('0xff', MemoryOp(disp=0xff)),  # do i want to support this
             Test('bx', MemoryOp(base=Register.BX)),
             Test('ax+bx', MemoryOp(base=Register.AX, index=Register.BX)),
+            Test('bp-0x04', MemoryOp(base=Register.BP, disp=-4)),
             Test('ax+cx+0x0', MemoryOp(base=Register.AX, index=Register.CX,
                                        disp=0)),
             Test('ax+cx+0xcafe', MemoryOp(base=Register.AX, index=Register.CX,

@@ -95,7 +95,9 @@ class Operand:
         self.value = value
 
     def __eq__(self, other):
-        return isinstance(other, Operand) and self.optype == other.optype and self.value == other.value
+        return (isinstance(other, Operand)
+                and self.optype == other.optype
+                and self.value == other.value)
 
     def __repr__(self):
         return f'Operand({self.optype}, {self.value})'
@@ -127,17 +129,34 @@ class MemoryOp(Operand):
         self.disp = disp
         self.scale = scale
 
+    def __eq__(self, other):
+        return (isinstance(other, MemoryOp)
+                and self.__dict__ == other.__dict__)
+
     @classmethod
     def from_str(cls, tokens):
         patterns = [
+            # ( base | disp )
             r'((?P<disp>0x[0-9a-f]+)|(?P<base>[a-z]{2}))$',
-            r'(?P<base>[a-z]{2})'
-            r'\+((?P<index>[a-z]{2})|(?P<disp>0x[0-9a-f]+))$',
-            r'(?P<base>[a-z]{2})'
-            r'\+(?P<index>[a-z]{2})(?P<disp>(\+|-)0x[0-9a-f]+)$',
-            r'((?P<base>[a-z]{2})\+)?'
-            r'(?P<index>[a-z]{2})\*(?P<scale>0x[124])'
-            r'(?P<disp>(\+|-)0x[0-9a-f]+)?$',
+
+            # base ( index | disp )
+            (
+                r'(?P<base>[a-z]{2})'
+                r'(\+((?P<index>[a-z]{2}))|(?P<disp>(\+|-)0x[0-9a-f]+))$'
+            ),
+
+            # base index disp
+            (
+                r'(?P<base>[a-z]{2})'
+                r'\+(?P<index>[a-z]{2})(?P<disp>(\+|-)0x[0-9a-f]+)$'
+            ),
+
+            # [ base ] index * scale [ disp ]
+            (
+                r'((?P<base>[a-z]{2})\+)?'
+                r'(?P<index>[a-z]{2})\*(?P<scale>0x[124])'
+                r'(?P<disp>(\+|-)0x[0-9a-f]+)?$'
+            ),
             ]
         for pattern in patterns:
             match = re.compile(pattern).match(tokens)
