@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import re
+
 from collections import defaultdict
 from collections.abc import MutableMapping
 from enum import auto, Enum, Flag
@@ -19,24 +21,20 @@ def parse_operand(op, text_labels=None, data_labels=None):
     elif len(op) == 2 and op.isalpha():
         return Operand.from_optype(OpType.REGISTER, Register(op))
     elif op.startswith('[') and op.endswith(']'):
-        op = op[1:-1]
-        offset = op[2:]
-        op = op[:2]
-        if offset:
-            try:
-                val = int(offset, 16)
-                return MemoryOp(Register(op), val)
-            except ValueError:
-                raise
-        return MemoryOp(Register(op))
+        return MemoryOp.from_str(op[1:-1])
     else:
         try:
             val = int(op, 16)
             if val < 0:
                 raise ValueError('invalid immediate value')
+            if val & 0xffff != val:
+                raise Exception('immediate value out of range')
             return ImmediateOp(val)
         except ValueError:
             raise Exception('invalid operand "%s"' % op)
+
+        # shouldn't be reachable
+        raise Exception('unknown operand "%s"' % op)
 
 
 def parse_operands(operands, text_labels=None, data_labels=None):
@@ -97,7 +95,7 @@ class Operand:
         self.value = value
 
     def __eq__(self, other):
-        return self.optype == other.optype and self.value == other.value
+        return isinstance(other, Operand) and self.optype == other.optype and self.value == other.value
 
     def __repr__(self):
         return f'Operand({self.optype}, {self.value})'
@@ -122,9 +120,58 @@ class RegisterOp(Operand):
 
 
 class MemoryOp(Operand):
-    def __init__(self, address, offset=0):
-        super().__init__(OpType.MEMORY, address)
-        self.offset = offset
+    def __init__(self, base=None, index=None, scale=1, disp=0):
+        super().__init__(OpType.MEMORY, base or index)
+        self.base = base
+        self.index = index
+        self.disp = disp
+        self.scale = scale
+
+    @classmethod
+    def from_str(cls, tokens):
+        patterns = [
+            r'((?P<disp>0x[0-9a-f]+)|(?P<base>[a-z]{2}))$',
+            r'(?P<base>[a-z]{2})'
+            r'\+((?P<index>[a-z]{2})|(?P<disp>0x[0-9a-f]+))$',
+            r'(?P<base>[a-z]{2})'
+            r'\+(?P<index>[a-z]{2})(?P<disp>(\+|-)0x[0-9a-f]+)$',
+            r'((?P<base>[a-z]{2})\+)?'
+            r'(?P<index>[a-z]{2})\*(?P<scale>0x[124])'
+            r'(?P<disp>(\+|-)0x[0-9a-f]+)?$',
+            ]
+        for pattern in patterns:
+            match = re.compile(pattern).match(tokens)
+            if match:
+                break
+        else:
+            raise Exception('no matching format pattern for %s', tokens)
+
+        res = match.groupdict()
+        if 'disp' in res and res['disp']:
+            res['disp'] = int(res['disp'], 16)
+
+        if 'scale' in res and res['scale']:
+            res['scale'] = int(res['scale'], 16)
+
+        if 'base' in res and res['base']:
+            res['base'] = Register(res['base'])
+
+        if 'index' in res and res['index']:
+            res['index'] = Register(res['index'])
+
+        res = {x: y for x, y in res.items() if y is not None}
+        return cls(**res)
+
+    def get(self, cpu):
+        addr = 0
+        if self.index:
+            addr += (cpu.registers[self.index.value] * self.scale)
+        if self.base:
+            addr += cpu.registers[self.base.value]
+        if self.disp:
+            addr += self.disp
+
+        return addr
 
 
 class ImmediateOp(Operand):
@@ -259,7 +306,7 @@ class CPU:
                 # Word size in register
                 return self.registers[operand.value.value]
         elif operand.optype == OpType.MEMORY:
-            addr = self.registers[operand.value.value] + operand.offset
+            addr = operand.get(self)
             return self._read_memory(addr)
         elif operand.optype == OpType.IMMEDIATE:
             return operand.value
@@ -285,7 +332,8 @@ class CPU:
                 # Word size in register
                 self.registers[operand.value.value] = value & 0xffff
         elif operand.optype == OpType.MEMORY:
-            addr = self.registers[operand.value.value] + operand.offset
+            # todo
+            addr = operand.get(self)
             self._write_memory(addr, value)
         else:
             raise Exception('unknown operand type %s' % operand)
@@ -330,6 +378,76 @@ class CPU:
     def op_je(self, operand):
         if Flag.ZF in self.flags:
             self.op_jmp(operand)
+
+    def op_ja(self, operand):
+        if Flag.CF not in self.flags and Flag.OF not in self.flags:
+            self.op_jmp(operand)
+
+    def op_jae(self, operand):
+        if Flag.CF not in self.flags:
+            self.op_jmp(operand)
+
+    def op_jb(self, operand):
+        if Flag.CF in self.flags:
+            self.op_jmp(operand)
+
+    def op_jbe(self, operand):
+        if Flag.CF in self.flags or Flag.ZF in self.flags:
+            self.op_jmp(operand)
+
+    def op_jc(self, operand):
+        if Flag.CF in self.flags:
+            self.op_jmp(operand)
+
+    def op_jg(self, operand):
+        if Flag.ZF not in self.flags:
+            if Flag.SF in self.flags and Flag.OF in self.flags:
+                self.op_jmp(operand)
+            elif Flag.SF not in self.flags and Flag.OF not in self.flags:
+                self.op_jmp(operand)
+
+    def op_jge(self, operand):
+        if Flag.SF in self.flags and Flag.OF in self.flags:
+            self.op_jmp(operand)
+        elif Flag.SF not in self.flags and Flag.OF not in self.flags:
+            self.op_jmp(operand)
+
+    def op_jl(self, operand):
+        if Flag.SF in self.flags and Flag.OF not in self.flags:
+            self.op_jmp(operand)
+        elif Flag.SF not in self.flags and Flag.OF in self.flags:
+            self.op_jmp(operand)
+
+    def op_jle(self, operand):
+        if Flag.SF in self.flags and Flag.OF not in self.flags:
+            self.op_jmp(operand)
+        elif Flag.SF not in self.flags and Flag.OF in self.flags:
+            self.op_jmp(operand)
+        elif Flag.ZF in self.flags:
+            self.op_jmp(operand)
+
+# Reduce convenient combinations; think about how to use flags to check values.
+#
+# JNA  Jump short if not above (CF=1 or ZF=1).
+# JNAE Jump short if not above or equal (CF=1).
+# JNB  Jump short if not below (CF=0).
+# JNBE Jump short if not below or equal (CF=0 and ZF=0).
+# JNC  Jump short if not carry (CF=0).
+# JNE  Jump short if not equal (ZF=0).
+# JNG  Jump short if not greater (ZF=1 or SF≠ OF).
+# JNGE Jump short if not greater or equal (SF≠ OF).
+# JNL  Jump short if not less (SF=OF).
+# JNLE Jump short if not less or equal (ZF=0 and SF=OF).
+# JNO  Jump short if not overflow (OF=0).
+# ###JNP  Jump short if not parity (PF=0).
+# JNS  Jump short if not sign (SF=0).
+# JNZ  Jump short if not zero (ZF=0).
+# JO   Jump short if overflow (OF=1).
+# ###JP   Jump short if parity (PF=1).
+# ###JPE  Jump short if parity even (PF=1).
+# ###JPO  Jump short if parity odd (PF=0).
+# JS   Jump short if sign (SF=1).
+# JZ   Jump short if zero (ZF = 1).
 
     def op_cmp(self, dest, src):
         if src.optype == dest.optype == OpType.MEMORY:
@@ -523,7 +641,7 @@ class CPU:
 
         if dest.optype == OpType.MEMORY:
             # TODO: move to write_mem
-            addr = self.registers[dest.value.value] + dest.offset
+            addr = dest.get(self)
             if addr & 0xf000 != 0x7000:
                 raise Exception(
                         f'runtime error: invalid memory address {addr:#06x}')
@@ -546,7 +664,7 @@ class CPU:
 
         if dest.optype == OpType.MEMORY:
             # TODO: move to write_mem
-            addr = self.registers[dest.value.value] + dest.offset
+            addr = dest.get(self)
             if addr & 0xf000 != 0x7000:
                 raise Exception(
                         f'runtime error: invalid memory address {addr:#06x}')

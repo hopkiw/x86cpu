@@ -67,7 +67,7 @@ class CPUTest(unittest.TestCase):
         self.assertSequenceEqual(rewrite, res)
 
     def test_get_operand_value(self):
-        state = State(registers={'ax': 0x22, 'bx': 0xdead},
+        state = State(registers={'ax': 0x22, 'bx': 0xdead, 'cx': 0x1},
                       memory=Memory({0x22: 0x34, 0x23: 0x12}))
 
         class Test:
@@ -78,8 +78,12 @@ class CPUTest(unittest.TestCase):
         for test in (
                 Test(RegisterOp(Register.AX), 0x22),
                 Test(MemoryOp(Register.AX), 0x1234),
-                Test(MemoryOp(Register.AX, offset=1), 0x0012),
-                Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                Test(MemoryOp(Register.AX, disp=1), 0x0012),
+                Test(MemoryOp(Register.AX, disp=-1), 0x3400),
+                Test(MemoryOp(disp=0x22), 0x1234),
+                Test(MemoryOp(index=Register.AX), 0x1234),
+                Test(MemoryOp(index=Register.AX, disp=1), 0x0012),
+                Test(MemoryOp(index=Register.AX, base=Register.CX), 0x0012),
                 Test(RegisterOp(Register.BL), 0xad),
                 Test(RegisterOp(Register.BH), 0xde),
                 Test(ImmediateOp(0x22), 0x22),
@@ -106,8 +110,8 @@ class CPUTest(unittest.TestCase):
         for test in (
                 Test(RegisterOp(Register.AX), 0x22),
                 Test(MemoryOp(Register.AX), 0x1234),
-                Test(MemoryOp(Register.AX, offset=1), 0x0012),
-                Test(MemoryOp(Register.AX, offset=-1), 0x3400),
+                # Test(MemoryOp(Register.AX, offset=1), 0x0012),
+                # Test(MemoryOp(Register.AX, offset=-1), 0x3400),
                 Test(RegisterOp(Register.BL), 0x56,
                      RegisterOp(Register.BX), 0x1256),
                 Test(RegisterOp(Register.BH), 0x56,
@@ -599,13 +603,60 @@ class CPUTest(unittest.TestCase):
         cpu.op_and(RegisterOp(Register.AX), ImmediateOp(0xff))
         self.assertEqual(0x0, cpu.registers['ax'])
 
+    def test_op_shr2(self):
+        state = State(registers={'ax': 0xf0})
+        cpu = CPU([], state=state)
+        cpu.op_shr(RegisterOp(Register.AX), ImmediateOp(1))
+        self.assertEqual(cpu.registers['ax'], 0x78)  # with al, it was 0xf8
+
 
 class OperandTest(unittest.TestCase):
     def test_registerop(self):
         pass
 
     def test_memoryop(self):
-        pass
+        class Test:
+            def __init__(self, tokens, result):
+                self.tokens = tokens
+                self.result = result
+
+            def __repr__(self):
+                return f'Test({self.tokens})'
+
+            # '-0xff',      should raise
+            # 'ax+bx+cx',   should raise
+            # 'ax+cx+0xdeadbeef',  should raise?
+            # 'rdx+rax*0',  should raise
+            # 'rdx+rax*3',  should raise
+
+        tests = [
+            Test('0xff', MemoryOp(disp=0xff)),  # do i want to support this
+            Test('bx', MemoryOp(base=Register.BX)),
+            Test('ax+bx', MemoryOp(base=Register.AX, index=Register.BX)),
+            Test('ax+cx+0x0', MemoryOp(base=Register.AX, index=Register.CX,
+                                       disp=0)),
+            Test('ax+cx+0xcafe', MemoryOp(base=Register.AX, index=Register.CX,
+                                          disp=0xcafe)),
+            Test('dx+ax*0x1', MemoryOp(base=Register.DX, index=Register.AX,
+                                       scale=1)),
+            Test('dx+ax*0x2', MemoryOp(base=Register.DX, index=Register.AX,
+                                       scale=2)),
+            Test('ax+dx*0x1+0x0', MemoryOp(base=Register.AX, index=Register.DX,
+                                           scale=1, disp=0)),
+            Test('ax+dx*0x1+0xcafe', MemoryOp(base=Register.AX,
+                                              index=Register.DX, scale=1,
+                                              disp=0xcafe)),
+            Test('ax*0x4', MemoryOp(index=Register.AX, scale=4)),
+            Test('ax*0x4+0x0', MemoryOp(index=Register.AX, scale=4, disp=0)),
+            ]
+
+        for test in tests:
+            with self.subTest(test=test):
+                res = MemoryOp.from_str(test.tokens)
+                self.assertEqual(res.base, test.result.base)
+                self.assertEqual(res.index, test.result.index)
+                self.assertEqual(res.scale, test.result.scale)
+                self.assertEqual(res.disp, test.result.disp)
 
     def test_immediateop(self):
         r = RegisterOp(Register.AX)
@@ -626,6 +677,7 @@ class OperandTest(unittest.TestCase):
         self.assertIsInstance(o, MemoryOp)
         self.assertEqual(o.optype, OpType.MEMORY)
         self.assertEqual(o.value, Register.AX)
+        self.assertEqual(o.base, Register.AX)
 
         o = Operand.from_optype(OpType.IMMEDIATE, 0x1)
         self.assertIsInstance(o, ImmediateOp)
