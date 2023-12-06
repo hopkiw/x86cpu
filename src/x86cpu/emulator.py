@@ -31,8 +31,11 @@ def parse_program(program):
 
         if line.endswith(':'):
             labels[section][line[:-1]] = n
-        elif line.startswith('.section'):
-            section = line.split()[1]
+        elif line.startswith('.text'):
+            section = 'text'
+            n = 0
+        elif line.startswith('.data'):
+            section = 'data'
             n = 0
         else:
             sections[section].append(line)
@@ -64,14 +67,30 @@ def parse_text(text, labels):
 
 def parse_data(data):
     new_data = defaultdict(int)
-    for n, instruction in enumerate(data.copy()):
+    n = 0
+    for instruction in data.copy():
         op, operands = instruction.split(maxsplit=1)
         if op == '.string':
             if not (operands.startswith('"') and operands.endswith('"')):
                 raise Exception('invalid string value "%s"' % instruction)
             operands = operands[1:-1]
-            for i, char in enumerate(operands):
-                new_data[n+i] = ord(char)
+            for char in operands:
+                new_data[n] = ord(char)
+                n += 1
+        elif op == '.zero':
+            operands = int(operands, 16)
+            for i in range(operands):
+                new_data[n] = 0
+                n += 1
+        elif op == '.byte':
+            operands = int(operands, 16)
+            new_data[n] = operands & 0xff
+            n += 1
+        elif op == '.short':
+            operands = int(operands, 16)
+            new_data[n] = operands & 0xff
+            new_data[n+1] = (operands >> 8) & 0xff
+            n += 2
         else:
             raise Exception('invalid instruction "%s"' % instruction)
 
