@@ -77,6 +77,7 @@ def parse_data(data):
             for char in operands:
                 new_data[n] = ord(char)
                 n += 1
+            n += 1  # null
         elif op == '.zero':
             operands = int(operands, 16)
             for i in range(operands):
@@ -335,3 +336,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# TODO: stack traces
+# TODO: breakpoints
+# TODO: connectable ports
