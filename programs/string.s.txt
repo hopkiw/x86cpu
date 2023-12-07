@@ -1,4 +1,9 @@
-  .section text
+  .data
+  .short 0xbeef
+  .zero 0x20
+mystring:
+  .string "Hello, world!"
+  .text
 strlen:
   push   bp
   mov    bp,sp
@@ -22,10 +27,8 @@ done:
   ret
 _start:
   push   mystring
+  push   0xbeef
   call   strlen
   push   ax
   nop
   nop
-  .section data
-mystring:
-  .string "Hello, world!"

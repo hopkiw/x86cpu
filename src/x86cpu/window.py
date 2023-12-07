@@ -139,7 +139,7 @@ class MemoryWindow(Window):
                 dataline = f'{dataline} {data:#04x}'
             line = [(COLOR_BLUE, f'{addr:#06x}'),
                     (COLOR_NORMAL, dataline)]
-            if addr == cpu.sp or addr + 2 == cpu.sp:
+            if cpu.sp >= addr and cpu.sp <= addr+3:
                 line.append((COLOR_NORMAL, '  <-'))
                 if self.start is None:
                     self.start = n

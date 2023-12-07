@@ -140,19 +140,19 @@ class MemoryOp(Operand):
             # ( base | disp )
             r'((?P<disp>0x[0-9a-f]+)|(?P<base>[a-z]{2}))$',
 
-            # base ( index | disp )
+            # base ( + index | +- disp )
             (
                 r'(?P<base>[a-z]{2})'
                 r'(\+((?P<index>[a-z]{2}))|(?P<disp>(\+|-)0x[0-9a-f]+))$'
             ),
 
-            # base index disp
+            # base + index +- disp
             (
                 r'(?P<base>[a-z]{2})'
                 r'\+(?P<index>[a-z]{2})(?P<disp>(\+|-)0x[0-9a-f]+)$'
             ),
 
-            # [ base ] index * scale [ disp ]
+            # [ base + ] index * scale [ +- disp ]
             (
                 r'((?P<base>[a-z]{2})\+)?'
                 r'(?P<index>[a-z]{2})\*(?P<scale>0x[124])'
@@ -226,6 +226,7 @@ class Memory(MutableMapping):
 
 class State:
     def __init__(self, registers=None, flags=None, memory=None, ports=None):
+        self.halt = False
         self.registers = {reg: 0 for reg in CPU._registers}
         if registers:
             self.registers.update(registers)
@@ -481,13 +482,38 @@ class CPU:
         if dest.optype == OpType.IMMEDIATE:
             raise Exception('invalid dest operand')
 
-        srcval = self._get_operand_value(src)
         destval = self._get_operand_value(dest)
+        srcval = self._get_operand_value(src)
+        res = destval - srcval
 
-        if destval - srcval == 0:
+        if res < 0:
+            res = _twos_complement(res)
+            self.flags |= Flag.CF
+        else:
+            self.flags &= ~Flag.CF
+
+        if res == 0:
             self.flags |= Flag.ZF
         else:
             self.flags &= ~Flag.ZF
+
+        if res & 0x8000 == 0x8000:
+            self.flags |= Flag.SF
+        else:
+            self.flags &= ~Flag.SF
+
+        if (
+                srcval & 0x8000 == 0x8000
+                and destval & 0x8000 == 0
+                and res & 0x8000 == 0x8000):
+            self.flags |= Flag.OF
+        elif (
+                srcval & 0x8000 == 0
+                and destval & 0x8000 == 0x8000
+                and res & 0x8000 == 0):
+            self.flags |= Flag.OF
+        else:
+            self.flags &= ~Flag.OF
 
     def op_sub(self, dest, src):
         if src.optype == dest.optype == OpType.MEMORY:
@@ -834,8 +860,7 @@ class CPU:
         self._set_operand_value(dest, res)
 
     def op_hlt(self):
-        # TODO: handle this and simply display/stop taking input
-        raise Exception('halt!')
+        self.states[-1].halt = True
 
     def op_nop(self):
         return
@@ -848,6 +873,8 @@ class CPU:
         self.ports[port].append(self.registers['ax'] & 0xff)
 
     def execute(self):
+        if self.halt:
+            return
         ports = [x.copy() for x in self.ports]
         self.states.append(State(self.registers.copy(), self.flags,
                                  self.memory.copy(), ports))
@@ -861,6 +888,10 @@ class CPU:
             opfunc(*operands)
         else:
             raise Exception('unsupported operation "%s"' % op)
+
+    @property
+    def halt(self):
+        return self.states[-1].halt
 
     @property
     def registers(self):
