@@ -11,6 +11,8 @@ COLOR_RED = 1
 COLOR_BLUE = 2
 COLOR_YELLOW = 3
 
+TERMINAL_PORT = 32
+
 
 class Window:
     def __init__(self, title, nlines, ncols, begin_y, begin_x):
@@ -158,3 +160,22 @@ class TextWindow(Window):
         self.setitems(formatted, False)
         self.select(cpu.ip - TEXT)
         self.refresh(follow)
+
+
+class IOWindow(Window):
+    def update(self, cpu):
+        lines = []
+        line = []
+        for c in cpu.ports[TERMINAL_PORT]:
+            if chr(c) == '\n':
+                lines.append([[COLOR_NORMAL, ''.join(line)]])
+                line = []
+            elif chr(c) == '':
+                lines = []
+                line = []
+            else:
+                line.append(chr(c))
+        if line:
+            lines.append([[COLOR_NORMAL, ''.join(line)]])
+
+        self.setitems(lines)

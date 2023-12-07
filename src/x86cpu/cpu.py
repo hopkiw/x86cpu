@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+# import sys
 
 from collections import defaultdict
 from collections.abc import MutableMapping
@@ -224,7 +225,7 @@ class Memory(MutableMapping):
 
 
 class State:
-    def __init__(self, registers=None, flags=None, memory=None):
+    def __init__(self, registers=None, flags=None, memory=None, ports=None):
         self.registers = {reg: 0 for reg in CPU._registers}
         if registers:
             self.registers.update(registers)
@@ -238,11 +239,16 @@ class State:
         else:
             self.memory = Memory()
 
+        if ports:
+            self.ports = ports
+        else:
+            self.ports = [list() for _ in range(0xff)]
+
     def __repr__(self):
-        return f'State({self.registers=}, {self.flags=}, {self.memory=})'
+        return f'State({self.registers=}, {self.flags=}, {self.memory=}'
 
     def copy(self):
-        return State(self.registers, self.flags, self.memory)
+        return State(self.registers, self.flags, self.memory, self.ports)
 
 
 def _twos_complement(val):
@@ -289,6 +295,7 @@ class CPU:
         for addr in data:
             self.memory[addr + DATA] = data[addr] & 0xffff
 
+    # TODO: this is not the job of the cpu
     def _rewrite_labels(self, instructions):
         newi = []
         for i in range(len(instructions)):
@@ -678,7 +685,7 @@ class CPU:
 
         for op in (src, dest):
             if op.optype == OpType.REGISTER:
-                if op.value.value[1] in ('h', 'l'):
+                if op.value.value[1] not in ('h', 'l'):
                     raise Exception('invalid operand size "%s"' % op)
 
         if dest.optype == OpType.MEMORY:
@@ -833,9 +840,17 @@ class CPU:
     def op_nop(self):
         return
 
+    def op_out(self, dest, src):
+        if src.value != Register.AL:
+            raise Exception('invalid src operand for instruction %s' % src)
+
+        port = dest.value & 0xff
+        self.ports[port].append(self.registers['ax'] & 0xff)
+
     def execute(self):
+        ports = [x.copy() for x in self.ports]
         self.states.append(State(self.registers.copy(), self.flags,
-                                 self.memory.copy()))
+                                 self.memory.copy(), ports))
 
         ip = self.ip
         self.registers['ip'] += 1
@@ -862,6 +877,10 @@ class CPU:
     @property
     def memory(self):
         return self.states[-1].memory
+
+    @property
+    def ports(self):
+        return self.states[-1].ports
 
     @property
     def ip(self):

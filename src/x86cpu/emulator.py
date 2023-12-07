@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from x86cpu.cpu import CPU, TEXT, parse_operands
-from x86cpu.window import MemoryWindow, RegisterWindow, TextWindow
+from x86cpu.window import MemoryWindow, RegisterWindow, TextWindow, IOWindow
 from x86cpu.window import COLOR_RED, COLOR_BLUE, COLOR_YELLOW
 
 import curses
@@ -148,22 +148,31 @@ def _main(stdscr):
 
     cpu = CPU(program, labels['text']['_start'], data)
 
-    # Memory window: entire lower region
+    upper_win_width = max(WIN_REGISTER_WIDTH, max_x // 3)
+    lower_win_width = max(WIN_REGISTER_WIDTH, max_x // 2)
+
+    # Memory window: left 2/3rds of lower region
     memory_win = MemoryWindow(
             'Stack',
             lower_win_height,
-            curses.COLS,
-            curses.LINES - lower_win_height,
+            lower_win_width,
+            max_y - lower_win_height,
             0)
     memory_win.start = None
 
-    upper_win_width = max(WIN_REGISTER_WIDTH, max_x // 3)
+    # IO window: right 1/3rd of lower region
+    io_win = IOWindow(
+            'IO',
+            lower_win_height,
+            max_x - lower_win_width,
+            max_y - lower_win_height,
+            lower_win_width)
 
     # Text window: left 2/3rds of upper region.
     text_win = TextWindow(
             'Text',
-            curses.LINES - lower_win_height,
-            curses.COLS - upper_win_width,
+            max_y - lower_win_height,
+            max_x - upper_win_width,
             0,
             0)
 
@@ -172,14 +181,15 @@ def _main(stdscr):
     # Register window: right 1/3rd of upper region.
     register_win = RegisterWindow(
             'Registers',
-            curses.LINES - lower_win_height,
-            curses.COLS - (curses.COLS - upper_win_width),
+            max_y - lower_win_height,
+            max_x - (max_x - upper_win_width),
             0,
-            curses.COLS - upper_win_width)
+            max_x - upper_win_width)
 
     refresh = True
     parse_mode = False
     windows = [text_win, memory_win]
+    # windows = [text_win, text_win]
     selwin = 0
     follow = True
     while True:
@@ -191,6 +201,7 @@ def _main(stdscr):
                             follow)
             memory_win.update(cpu)
             register_win.update(cpu)
+            io_win.update(cpu)
             refresh = False
 
         curses.panel.update_panels()
@@ -252,12 +263,14 @@ def _main(stdscr):
             refresh = True
 
         elif inp == curses.KEY_RESIZE:
+            # resize = False
             stdscr.erase()
             stdscr.noutrefresh()
 
             max_y, max_x = stdscr.getmaxyx()
             lower_win_height = max(WIN_HEIGHT, max_y // 3)
             upper_win_width = max(WIN_REGISTER_WIDTH, max_x // 3)
+            lower_win_width = max(WIN_REGISTER_WIDTH, max_x // 2)
 
             if (
                     max_y < (2 * WIN_HEIGHT)
@@ -275,9 +288,14 @@ def _main(stdscr):
             try:
                 memory_win.resize(
                         lower_win_height,
-                        max_x,
+                        lower_win_width,
                         max_y - lower_win_height,
                         0)
+                io_win.resize(
+                        lower_win_height,
+                        max_x - lower_win_width,
+                        max_y - lower_win_height,
+                        lower_win_width)
                 text_win.resize(
                         max_y - lower_win_height,
                         max_x - upper_win_width,
