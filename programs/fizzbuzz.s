@@ -20,34 +20,30 @@ mainloop:
 fizzbuzz:
   push bp
   mov  bp,sp
-  push 0x0
-  push 0x0
+  sub  sp,0x6
+  mov  [bp-0x2],0x0
+  mov  [bp-0x4],0x0
   mov  bx,sp
   mov  ax,[bp+0x4]
   push ax
   push bx
   call hex
-  pop  bx
-  pop  ax
+  add  sp,0x4
   push 0x2
   push bx
   call print
-  pop  bx
-  pop  ax
-  pop  ax
+  add  sp,0x4
   mov  ax,[bp+0x4]
   mov  bx,0x3
   mov  dx,0x0
   div  bx
   cmp  dx,0x0
   jne  fizzbuzz_check_five
-  pop  ax
-  push 0x1
+  mov  [bp-0x4],0x1
   push 0x4
   push fizzstr
   call print
-  pop  ax
-  pop  ax
+  add  sp,0x4
 fizzbuzz_check_five:
   mov  ax,[bp+0x4]
   mov  bx,0x5
@@ -55,31 +51,25 @@ fizzbuzz_check_five:
   div  bx
   cmp  dx,0x0
   jne  fizzbuzz_done
-  pop  ax
-  push 0x1
+  mov  [bp-0x4],0x1
   push 0x4
   push buzzstr
   call print
-  pop  ax
-  pop  ax
+  add  sp,0x4
 fizzbuzz_done:
-  pop  ax
-  cmp  ax,0x1
+  cmp  [bp-0x4],0x1
   je   fizzbuzz_ret
   push 0xa
   push wrongstr
   call print
-  pop  ax
-  pop  ax
+  add  sp,0x4
 fizzbuzz_ret:
   push 0xa
   mov  bx,sp
   push 0x1
   push bx
   call print
-  pop  ax
-  pop  ax
-  pop  ax
+  add  sp,0xc
   pop  bp
   ret
   hlt
