@@ -18,57 +18,82 @@ WIN_TEXT_WIDTH = 35
 WIN_HEIGHT = 13
 
 
-def parse_program(program):
-    labels = {'text': {}, 'data': {}}
-    sections = {'text': [], 'data': []}
+class Program:
+    def __init__(self, text, raw, data, text_labels, data_labels):
+        self.text = text
+        self.raw = raw
+        self.data = data
+        self.text_labels = text_labels
+        self.data_labels = data_labels
+
+
+# TODO: needs tests
+def parse_program(lines):
+    sections = {
+            'data': [],
+            'text': [],
+            }
     section = 'text'
 
-    n = 0
-    for line in program:
+    for line in lines:
+        # remove spaces and comments
         line = line.split(';')[0].strip()
+
+        # skip empty lines
         if not line:
             continue
 
-        if line.endswith(':'):
-            labels[section][line[:-1]] = n
-        elif line.startswith('.text'):
+        if line.startswith('.text'):
             section = 'text'
-            n = 0
         elif line.startswith('.data'):
             section = 'data'
-            n = 0
         else:
             sections[section].append(line)
-            n += 1
 
-    if '_start' not in labels['text']:
-        labels['text']['_start'] = 0
+    data, data_labels = parse_data(sections['data'])
+    text, text_labels = parse_text(sections['text'], data_labels)
 
-    return sections, labels
-
-
-def parse_text(text, labels):
-    instructions = []
-    for n, instruction in enumerate(text):
+    parsed = []
+    for instruction in text:
         instruction = instruction.split(maxsplit=1)
         if len(instruction) < 2:
             instruction = instruction[0]
-            if instruction not in ['nop', 'ret', 'hlt']:
+            if instruction not in ('nop', 'ret', 'hlt'):
                 raise Exception('invalid instruction: %s requires operands'
                                 % instruction)
-            instructions.append((instruction, tuple()))
+            parsed.append((instruction, tuple()))
         else:
             op, operands = instruction
-            operands = parse_operands(operands, labels['text'], labels['data'])
-            instructions.append((op, operands))
+            operands = parse_operands(operands, text_labels, data_labels)
+            parsed.append((op, operands))
 
-    return instructions
+    if '_start' not in text_labels:
+        text_labels['_start'] = 0
+
+    return Program(parsed, text, data, text_labels, data_labels)
+
+
+def parse_text(text, data_labels):
+    instructions = []
+    labels = {}
+    for instruction in text:
+        if instruction.endswith(':'):
+            labels[instruction[:-1]] = len(instructions)
+        else:
+            instructions.append(instruction)
+
+    return instructions, labels
 
 
 def parse_data(data):
     new_data = defaultdict(int)
     n = 0
+    labels = {}
     for instruction in data.copy():
+        if instruction.endswith(':'):
+            labels[instruction[:-1]] = n
+            continue
+
         op, operands = instruction.split(maxsplit=1)
         if op == '.string':
             if not (operands.startswith('"') and operands.endswith('"')):
@@ -95,7 +120,7 @@ def parse_data(data):
         else:
             raise Exception('invalid instruction "%s"' % instruction)
 
-    return new_data
+    return new_data, labels
 
 
 def run(fn):
@@ -143,11 +168,12 @@ def _main(stdscr):
         lines = fh.read().splitlines()
 
     # TODO: desperate need of renaming
-    sections, labels = parse_program(lines)
-    program = parse_text(sections['text'], labels)
-    data = parse_data(sections['data'])
+    # sections = parse_program(lines)
+    # data, data_labels = parse_data(sections['data'])
+    # program, text_labels = parse_text(sections['text'], data_labels)
+    program = parse_program(lines)
 
-    cpu = CPU(program, labels['text']['_start'], data)
+    cpu = CPU(program.text, program.text_labels['_start'], program.data)
 
     upper_win_width = max(WIN_REGISTER_WIDTH, max_x // 3)
     lower_win_width = max(WIN_REGISTER_WIDTH, max_x // 2)
@@ -177,7 +203,7 @@ def _main(stdscr):
             0,
             0)
 
-    text_win.labels = labels['text']
+    text_win.labels = program.text_labels
 
     # Register window: right 1/3rd of upper region.
     register_win = RegisterWindow(
@@ -198,7 +224,7 @@ def _main(stdscr):
             windows[selwin].active = True
             windows[selwin-1].active = False
 
-            text_win.update(cpu, program if parse_mode else sections['text'],
+            text_win.update(cpu, program.text if parse_mode else program.raw,
                             follow)
             memory_win.update(cpu)
             register_win.update(cpu)
@@ -340,3 +366,4 @@ if __name__ == '__main__':
 # TODO: stack traces
 # TODO: breakpoints
 # TODO: connectable ports
+# TODO: skip to last  for replaying from port history

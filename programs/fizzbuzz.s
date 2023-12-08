@@ -1,4 +1,3 @@
-; TODO: print each num
   .data
 fizzstr:
   .string "Fizz"
@@ -21,20 +20,20 @@ mainloop:
 fizzbuzz:
   push bp
   mov  bp,sp
-  push 0x0  ; int wrongstr
-  push 0x0  ; char digit
-  mov  bx,sp ; char *digitptr
+  push 0x0
+  push 0x0
+  mov  bx,sp
   mov  ax,[bp+0x4]
   push ax
   push bx
   call hex
-  pop  bx ; balance
-  pop  ax ; balance
+  pop  bx
+  pop  ax
   push 0x2
   push bx
   call print
   pop  bx
-  pop  ax ; balance
+  pop  ax
   pop  ax
   mov  ax,[bp+0x4]
   mov  bx,0x3
@@ -43,7 +42,7 @@ fizzbuzz:
   cmp  dx,0x0
   jne  fizzbuzz_check_five
   pop  ax
-  push 0x1  ; wrongstr
+  push 0x1
   push 0x4
   push fizzstr
   call print
@@ -73,8 +72,8 @@ fizzbuzz_done:
   pop  ax
   pop  ax
 fizzbuzz_ret:
-  push 0xa   ;newline
-  mov  bx,sp ;&newline
+  push 0xa
+  mov  bx,sp
   push 0x1
   push bx
   call print

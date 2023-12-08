@@ -22,7 +22,10 @@ def parse_operand(op, text_labels=None, data_labels=None):
     elif len(op) == 2 and op.isalpha():
         return Operand.from_optype(OpType.REGISTER, Register(op))
     elif op.startswith('[') and op.endswith(']'):
-        return MemoryOp.from_str(op[1:-1])
+        op = op[1:-1]
+        for label in data_labels:
+            op = op.replace(label, hex(data_labels[label]))
+        return MemoryOp.from_str(op)
     else:
         try:
             val = int(op, 16)
