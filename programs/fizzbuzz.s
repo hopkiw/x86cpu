@@ -6,13 +6,14 @@ buzzstr:
 wrongstr:
   .string "No thanks!"  
   .text
-  mov  ax,0x0
-  mov  bx,0xf
+  mov  ax,0xb
+  push 0xf
 mainloop:
   add  ax,0x1
   push ax
   call fizzbuzz
   pop  ax
+  mov  bx,[sp]
   cmp  ax,bx
   jne  mainloop
   hlt
@@ -22,17 +23,24 @@ fizzbuzz:
   mov  bp,sp
   sub  sp,0x6
   mov  [bp-0x2],0x0
-  mov  [bp-0x4],0x0
-  mov  bx,sp
-  mov  ax,[bp+0x4]
-  push ax
-  push bx
+  ; mov [bp-0x4],0x0  ; redundant, but space for pointer
+  push [bp+0x4]
+  push bp
+  sub  [sp],0x4
   call hex
-  add  sp,0x4
+  pop  bx
+  add  sp,0x2
+  push 0x2
+  push bx
+  call print
+  pop  bx
+  add  sp,0x2
+  mov  [bp-0x4],0x203a
   push 0x2
   push bx
   call print
   add  sp,0x4
+fizzbuzz_check_three:
   mov  ax,[bp+0x4]
   mov  bx,0x3
   mov  dx,0x0
