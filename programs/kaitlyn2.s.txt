@@ -1,6 +1,7 @@
   mov   ax,0x7f04
-  mov   [ax],0xbeef
   sub   ax,0x1
+  sub   ax,0x7f03
+  je    mysecondlabel
   mov   bx,[ax]
   mov   ax,bx
 mylabel:
