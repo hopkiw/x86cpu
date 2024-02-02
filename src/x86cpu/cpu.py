@@ -26,19 +26,20 @@ def parse_operand(op, text_labels=None, data_labels=None):
         for label in data_labels:
             op = op.replace(label, hex(data_labels[label]))
         return MemoryOp.from_str(op)
-    else:
+    elif op.startswith('0x'):
         try:
             val = int(op, 16)
             if val < 0:
-                raise ValueError('invalid immediate value')
+                raise ValueError('invalid immediate value "%s"' % op)
             if val & 0xffff != val:
                 raise Exception('immediate value out of range')
             return ImmediateOp(val)
         except ValueError:
-            raise Exception('invalid operand "%s"' % op)
+            raise Exception('invalid immediate value "%s"' % op)
 
+    else:
         # shouldn't be reachable
-        raise Exception('unknown operand "%s"' % op)
+        raise Exception('unknown label or operand "%s"' % op)
 
 
 def parse_operands(operands, text_labels=None, data_labels=None):

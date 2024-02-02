@@ -54,17 +54,21 @@ def parse_program(lines):
     text, text_labels = parse_text(sections['text'], data_labels)
 
     parsed = []
-    for instruction in text:
+    for line, instruction in enumerate(text):
         instruction = instruction.split(maxsplit=1)
         if len(instruction) < 2:
             instruction = instruction[0]
             if instruction not in ('nop', 'ret', 'hlt'):
-                raise Exception('invalid instruction: %s requires operands'
-                                % instruction)
+                raise Exception('invalid instruction on line %d: %s' %
+                                (line, instruction))
             parsed.append((instruction, tuple()))
         else:
-            op, operands = instruction
-            operands = parse_operands(operands, text_labels, data_labels)
+            try:
+                op, operands = instruction
+                operands = parse_operands(operands, text_labels, data_labels)
+            except Exception as e:
+                raise Exception('Error processing operands on line %d: %s' %
+                                (line, e))
             parsed.append((op, operands))
 
     if '_start' not in text_labels:
@@ -89,12 +93,17 @@ def parse_data(data):
     new_data = defaultdict(int)
     n = 0
     labels = {}
-    for instruction in data.copy():
+    for line, instruction in enumerate(data.copy()):
         if instruction.endswith(':'):
             labels[instruction[:-1]] = n
             continue
 
-        op, operands = instruction.split(maxsplit=1)
+        try:
+            op, operands = instruction.split(maxsplit=1)
+        except ValueError:
+            raise Exception('invalid line in data section on line %d: %s' %
+                            (line, instruction))
+
         if op == '.string':
             if not (operands.startswith('"') and operands.endswith('"')):
                 raise Exception('invalid string value "%s"' % instruction)
@@ -367,3 +376,6 @@ if __name__ == '__main__':
 # TODO: breakpoints
 # TODO: connectable ports
 # TODO: skip to last  for replaying from port history
+# TODO: lea 
+# TODO: use mask instead of overwriting strategy in programs
+# TODO: don't modify flags for push, pop etc.. those subtracts should be noflag
